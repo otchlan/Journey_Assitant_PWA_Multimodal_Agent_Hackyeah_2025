@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analiza Ruchu Drogowego</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+        .input-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr 0.8fr auto;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .input-wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+            font-size: 0.9em;
+        }
+        input {
+            padding: 12px 15px;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            align-self: flex-end;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+        .info-panel {
+            padding: 30px;
+            background: white;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+        }
+        .stat-card h3 {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+        .stat-card p {
+            opacity: 0.9;
+            font-size: 0.9em;
+        }
+        .legend {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin: 20px 0;
+        }
+        .legend h4 {
+            margin-bottom: 10px;
+            color: #495057;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+        .legend-color {
+            width: 40px;
+            height: 20px;
+            margin-right: 10px;
+            border-radius: 5px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-weight: 600;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 2px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚗 Analiza Ruchu Drogowego</h1>
+            <p>Sprawdź natężenie ruchu w wybranej lokalizacji</p>
+        </div>
+        
+        <div class="controls">
+            <div class="input-group">
+                <div class="input-wrapper">
+                    <label for="lat">Szerokość geograficzna</label>
+                    <input type="number" id="lat" value="52.2297" step="0.0001" placeholder="np. 52.2297">
+                </div>
+                <div class="input-wrapper">
+                    <label for="lon">Długość geograficzna</label>
+                    <input type="number" id="lon" value="21.0122" step="0.0001" placeholder="np. 21.0122">
+                </div>
+                <div class="input-wrapper">
+                    <label for="radius">Promień (km)</label>
+                    <input type="number" id="radius" value="5.00" step="0.01" min="0.10" max="50.00" placeholder="np. 5.00">
+                </div>
+                <button onclick="loadTraffic()">Pokaż ruch</button>
+            </div>
+        </div>
+
+        <div id="map"></div>
+
+        <div class="info-panel">
+            <div class="legend">
+                <h4>🚦 Legenda natężenia ruchu</h4>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #00ff00;"></div>
+                    <span>Płynny ruch (0-4% wolniej)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ffff00;"></div>
+                    <span>Lekkie spowolnienie (5-10% wolniej)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ffa500;"></div>
+                    <span>Spowolnienie (11-25% wolniej)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff0000;"></div>
+                    <span>Duże opóźnienie (26-50% wolniej)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #8b0000;"></div>
+                    <span>Korek (powyżej 50% wolniej)</span>
+                </div>
+            </div>
+            
+            <div id="loading" class="loading" style="display: none;">
+                Ładowanie danych o ruchu...
+            </div>
+            <div id="error" class="error" style="display: none;"></div>
+            <div id="stats" class="stats"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script>
+        let map;
+        let trafficLayer;
+        let circleMarker;
+        
+        // TYMCZASOWO: Wklej swój klucz API tutaj (zamiast null)
+        let apiKey = null; // Zmień na: let apiKey = 'twoj-klucz-api';
+
+        // Wczytaj klucz API z pliku key.txt
+        async function loadApiKey() {
+            // Jeśli klucz już jest ustawiony w kodzie, pomiń wczytywanie z pliku
+            if (apiKey && apiKey !== null) {
+                console.log('Używam klucza API z kodu');
+                return true;
+            }
+            
+            try {
+                const response = await fetch('key.txt');
+                if (!response.ok) {
+                    throw new Error('Nie można wczytać pliku key.txt');
+                }
+                const key = await response.text();
+                apiKey = key.trim();
+                console.log('Klucz API wczytany pomyślnie z pliku');
+                return true;
+            } catch (error) {
+                showError('Błąd wczytywania klucza API: ' + error.message + '. ROZWIĄZANIE: Uruchom aplikację przez lokalny serwer (np. python -m http.server) lub wklej klucz API bezpośrednio w kodzie (linia 226).');
+                console.error('Error loading API key:', error);
+                console.log('TIP: Uruchom lokalny serwer lub ustaw apiKey bezpośrednio w kodzie');
+                return false;
+            }
+        }
+
+        // Inicjalizacja mapy
+        function initMap(lat, lon, radius) {
+            if (map) {
+                map.setView([lat, lon], 13);
+            } else {
+                map = L.map('map').setView([lat, lon], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(map);
+            }
+
+            // Usuń poprzedni okrąg
+            if (circleMarker) {
+                map.removeLayer(circleMarker);
+            }
+
+            // Dodaj okrąg z wybranym promieniem
+            circleMarker = L.circle([lat, lon], {
+                color: '#667eea',
+                fillColor: '#667eea',
+                fillOpacity: 0.1,
+                radius: radius * 1000 // km na metry
+            }).addTo(map);
+
+            // Dodaj marker centrum
+            L.marker([lat, lon]).addTo(map)
+                .bindPopup(`<b>Centrum wyszukiwania</b><br>Lat: ${lat}<br>Lon: ${lon}<br>Promień: ${radius} km`)
+                .openPopup();
+
+            // Dopasuj widok do okręgu
+            map.fitBounds(circleMarker.getBounds(), { padding: [50, 50] });
+        }
+
+        async function loadTraffic() {
+            // Sprawdź czy klucz API jest wczytany
+            if (!apiKey) {
+                const loaded = await loadApiKey();
+                if (!loaded) {
+                    return;
+                }
+            }
+
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lon = parseFloat(document.getElementById('lon').value);
+            const radius = parseFloat(document.getElementById('radius').value);
+
+            if (isNaN(lat) || isNaN(lon)) {
+                showError('Wprowadź poprawne współrzędne');
+                return;
+            }
+
+            if (isNaN(radius) || radius < 0.1 || radius > 50) {
+                showError('Promień musi być między 0.10 a 50.00 km');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('stats').innerHTML = '';
+
+            initMap(lat, lon, radius);
+
+            // Usuń poprzednią warstwę ruchu
+            if (trafficLayer) {
+                map.removeLayer(trafficLayer);
+            }
+
+            const bounds = calculateBounds(lat, lon, radius);
+            const bbox = `${bounds.minLon},${bounds.minLat},${bounds.maxLon},${bounds.maxLat}`;
+
+            try {
+                // Najpierw testujemy czy klucz API działa
+                console.log('Testing API key...');
+                const testUrl = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?key=${apiKey}&point=${lat},${lon}`;
+                const testResponse = await fetch(testUrl);
+                
+                if (!testResponse.ok) {
+                    const errorText = await testResponse.text();
+                    throw new Error(`API Error (${testResponse.status}): ${errorText}. Sprawdź czy klucz API jest poprawny i ma uprawnienia do Traffic API.`);
+                }
+                
+                console.log('API key valid!');
+
+                // Traffic Flow Tile - pokazuje natężenie ruchu kolorami
+                trafficLayer = L.tileLayer(
+                    `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${apiKey}`,
+                    {
+                        attribution: '© TomTom Traffic',
+                        opacity: 0.8,
+                        maxZoom: 18,
+                        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+                    }
+                ).addTo(map);
+
+                console.log('Traffic layer added');
+
+                // Pobierz szczegółowe dane o przepływie ruchu w wybranych punktach
+                await fetchTrafficFlowData(lat, lon, bounds, radius);
+
+                // Pobierz dane o incydentach
+                const incidentsUrl = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${apiKey}&bbox=${bbox}&fields={incidents{type,geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,events{description,code},delay}}}`;
+                
+                console.log('Fetching incidents...');
+                const response = await fetch(incidentsUrl);
+                
+                if (!response.ok) {
+                    console.warn('Incidents API failed:', response.status);
+                }
+                
+                const data = await response.json();
+                displayIncidents(data);
+                document.getElementById('loading').style.display = 'none';
+
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Błąd: ' + error.message);
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        async function fetchTrafficFlowData(centerLat, centerLon, bounds, radius) {
+            // Dynamicznie generuj punkty pomiarowe na podstawie promienia
+            const numPoints = Math.max(7, Math.min(15, Math.round(radius * 2))); // 7-15 punktów w zależności od promienia
+            const points = [[centerLat, centerLon]]; // Zawsze punkt centralny
+            
+            // Dodaj punkty w różnych kierunkach
+            const latDelta = (radius / 111) * 0.4; // ~40% promienia
+            const lonDelta = (radius / (111 * Math.cos(centerLat * Math.PI / 180))) * 0.4;
+            
+            for (let i = 0; i < numPoints - 1; i++) {
+                const angle = (2 * Math.PI * i) / (numPoints - 1);
+                const lat = centerLat + latDelta * Math.sin(angle);
+                const lon = centerLon + lonDelta * Math.cos(angle);
+                points.push([lat, lon]);
+            }
+
+            let totalSpeed = 0;
+            let totalFreeFlow = 0;
+            let count = 0;
+
+            console.log(`Fetching flow data for ${points.length} points in ${radius}km radius...`);
+
+            for (const [lat, lon] of points) {
+                try {
+                    const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?key=${apiKey}&point=${lat},${lon}`;
+                    const response = await fetch(url);
+                    
+                    if (!response.ok) {
+                        console.warn(`Flow data failed for point ${lat},${lon}:`, response.status);
+                        continue;
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.flowSegmentData) {
+                        totalSpeed += data.flowSegmentData.currentSpeed || 0;
+                        totalFreeFlow += data.flowSegmentData.freeFlowSpeed || 0;
+                        count++;
+
+                        // Dodaj marker z informacją o prędkości
+                        const speed = data.flowSegmentData.currentSpeed;
+                        const freeFlow = data.flowSegmentData.freeFlowSpeed;
+                        const confidence = data.flowSegmentData.confidence || 0;
+                        
+                        let color = '#00ff00';
+                        if (speed < freeFlow * 0.5) color = '#8b0000';
+                        else if (speed < freeFlow * 0.75) color = '#ff0000';
+                        else if (speed < freeFlow * 0.9) color = '#ffa500';
+                        else if (speed < freeFlow * 0.95) color = '#ffff00';
+
+                        L.circleMarker([lat, lon], {
+                            radius: 8,
+                            fillColor: color,
+                            color: '#fff',
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.8
+                        }).addTo(map)
+                            .bindPopup(`
+                                <b>📊 Pomiar prędkości</b><br>
+                                Aktualna: <b>${speed} km/h</b><br>
+                                Normalna: ${freeFlow} km/h<br>
+                                Spowolnienie: ${Math.round((1 - speed/freeFlow) * 100)}%<br>
+                                Pewność: ${(confidence * 100).toFixed(0)}%
+                            `);
+                        
+                        console.log(`Point ${lat},${lon}: ${speed}/${freeFlow} km/h`);
+                    }
+                } catch (e) {
+                    console.warn('Error fetching flow data for point', lat, lon, ':', e.message);
+                }
+            }
+
+            console.log(`Successfully fetched ${count} flow measurements`);
+
+            // Aktualizuj statystyki
+            if (count > 0) {
+                const avgSpeed = Math.round(totalSpeed / count);
+                const avgFreeFlow = Math.round(totalFreeFlow / count);
+                const delay = Math.round((1 - avgSpeed/avgFreeFlow) * 100);
+                
+                updateStats(avgSpeed, avgFreeFlow, delay);
+            } else {
+                console.warn('No flow data available - check API permissions for Traffic Flow API');
+                showError('Uwaga: Nie udało się pobrać danych o przepływie ruchu. Upewnij się, że twój klucz API ma dostęp do Traffic Flow API.');
+            }
+        }
+
+        function updateStats(avgSpeed, avgFreeFlow, delay) {
+            const statsDiv = document.getElementById('stats');
+            const existing = statsDiv.innerHTML;
+            
+            const speedStats = `
+                <div class="stat-card">
+                    <h3>${avgSpeed} km/h</h3>
+                    <p>Średnia prędkość</p>
+                </div>
+                <div class="stat-card">
+                    <h3>${avgFreeFlow} km/h</h3>
+                    <p>Prędkość normalna</p>
+                </div>
+                <div class="stat-card">
+                    <h3>${delay}%</h3>
+                    <p>Spowolnienie ruchu</p>
+                </div>
+            `;
+            
+            if (existing) {
+                statsDiv.innerHTML = speedStats + existing;
+            } else {
+                statsDiv.innerHTML = speedStats;
+            }
+        }
+
+        function calculateBounds(lat, lon, radiusKm) {
+            const latDelta = radiusKm / 111;
+            const lonDelta = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
+
+            return {
+                minLat: lat - latDelta,
+                maxLat: lat + latDelta,
+                minLon: lon - lonDelta,
+                maxLon: lon + lonDelta
+            };
+        }
+
+        function displayIncidents(data) {
+            const statsDiv = document.getElementById('stats');
+            
+            if (!data.incidents || data.incidents.length === 0) {
+                statsDiv.innerHTML += '<p style="text-align: center; color: #28a745; font-size: 1.2em; grid-column: 1 / -1;">✅ Brak incydentów drogowych w tym obszarze</p>';
+                return;
+            }
+
+            const incidents = data.incidents;
+            
+            // Dodaj markery incydentów
+            incidents.forEach(incident => {
+                if (incident.geometry && incident.geometry.coordinates) {
+                    const coords = incident.geometry.coordinates[0];
+                    const description = incident.properties?.events?.[0]?.description || 'Incydent drogowy';
+                    const delay = incident.properties?.magnitudeOfDelay || 'nieznane';
+                    
+                    L.marker([coords[1], coords[0]], {
+                        icon: L.icon({
+                            iconUrl: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-icon.png',
+                            iconSize: [25, 41],
+                            iconAnchor: [12, 41]
+                        })
+                    }).addTo(map)
+                        .bindPopup(`<b>${description}</b><br>Opóźnienie: ${delay}`);
+                }
+            });
+
+            // Dodaj statystyki incydentów (jeśli są już statystyki prędkości)
+            const existing = statsDiv.innerHTML;
+            const incidentStats = `
+                <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    <h3>${incidents.length}</h3>
+                    <p>Incydenty drogowe</p>
+                </div>
+            `;
+            
+            if (existing) {
+                statsDiv.innerHTML = existing + incidentStats;
+            } else {
+                statsDiv.innerHTML = incidentStats;
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        // Wczytaj klucz API przy starcie
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadApiKey();
+        });
+
+        // Inicjalizacja mapy przy starcie (Warszawa jako domyślna lokalizacja)
+        initMap(52.2297, 21.0122, 5.00);
+    </script>
+</body>

@@ -1,0 +1,43 @@
+{
+  "category": "routes",
+  "triggers": [
+    "trasa",
+    "dojazd",
+    "jak dojechać",
+    "nawigacja",
+    "droga do"
+  ],
+  "subcategories": {
+    "planning": {
+      "keywords": [
+        "zaplanuj",
+        "jak dojechać",
+        "najszybsza trasa",
+        "trasa do"
+      ],
+      "systemPrompt": "Jesteś asystentem nawigacji. Pomagasz planować trasy z uwzględnieniem aktualnych warunków drogowych, incydentów i preferencji użytkownika.",
+      "questions": [
+        "Dokąd chcesz dojechać?",
+        "Preferujesz trasę najszybszą czy bez autostrad?",
+        "Czy chcesz unikać płatnych dróg?",
+        "O której godzinie planujesz wyjazd?"
+      ],
+      "priority": 1
+    },
+    "alternative": {
+      "keywords": [
+        "objazd",
+        "inna trasa",
+        "alternatywna",
+        "omiń"
+      ],
+      "systemPrompt": "Asystent ds. tras alternatywnych. Sugerujesz objazdy w przypadku utrudnień.",
+      "questions": [
+        "Czego chcesz uniknąć na trasie?",
+        "Czy zależy Ci na czasie czy na komforcie?",
+        "Czy akceptujesz dłuższą trasę?"
+      ],
+      "priority": 2
+    }
+  }
+}

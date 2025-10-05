@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planer Trasy</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e5e7eb;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-text {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #1f2937;
+            font-size: 16px;
+            font-weight: 500;
+        }
+        .route-legend {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+            padding: 20px;
+            z-index: 1000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-height: 40vh;
+            overflow-y: auto;
+        }
+        .route-legend h3 {
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: center;
+        }
+        .route-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .route-section {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        .route-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .route-line {
+            width: 30px;
+            height: 3px;
+            border-radius: 2px;
+        }
+        .route-line.fastest {
+            background: #667eea;
+        }
+        .route-line.shortest {
+            height: 0;
+            border-top: 2px dashed #ff00ff;
+            border-bottom: 2px dashed #ff00ff;
+        }
+        .route-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 13px;
+        }
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .stat-label {
+            color: #6b7280;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-value {
+            color: #1f2937;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .delay-warning {
+            background: #fef3c7;
+            border-left: 3px solid #f59e0b;
+            padding: 8px 10px;
+            margin-top: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #92400e;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-text">Planowanie trasy...</div>
+    </div>
+    <div id="map"></div>
+    <div id="routeLegend" class="route-legend" style="display: none;"></div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script>
+        let apiKey = null;
+        let map;
+        let routeLayer;
+        let shortestRouteLayer;
+        let markersLayer;
+        
+        // Pobierz parametry z URL
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                from: params.get('from') || '',
+                to: params.get('to') || '',
+                date: params.get('date') || '',
+                time: params.get('time') || ''
+            };
+        }
+        
+        // Wczytaj klucz API
+        async function loadApiKey() {
+            if (apiKey && apiKey !== null && apiKey !== '') {
+                console.log('Używam klucza API z kodu');
+                return true;
+            }
+            
+            try {
+                const response = await fetch('key.txt');
+                if (!response.ok) {
+                    throw new Error('Nie można wczytać pliku key.txt');
+                }
+                const key = await response.text();
+                apiKey = key.trim();
+                console.log('Klucz API wczytany pomyślnie');
+                return true;
+            } catch (error) {
+                console.error('Błąd wczytywania klucza API:', error);
+                hideLoading();
+                alert('Błąd: Nie można załadować klucza API. Upewnij się, że plik key.txt istnieje.');
+                return false;
+            }
+        }
+        
+        // Inicjalizacja mapy
+        function initMap() {
+            map = L.map('map').setView([52.2297, 21.0122], 6);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            shortestRouteLayer = L.layerGroup().addTo(map);
+            routeLayer = L.layerGroup().addTo(map);
+            markersLayer = L.layerGroup().addTo(map);
+        }
+        
+        // Geokodowanie
+        async function geocodeAddress(address) {
+            const url = `https://api.tomtom.com/search/2/geocode/${encodeURIComponent(address)}.json?key=${apiKey}`;
+            
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.results && data.results.length > 0) {
+                const pos = data.results[0].position;
+                return { lat: pos.lat, lon: pos.lon };
+            }
+            throw new Error('Nie znaleziono lokalizacji: ' + address);
+        }
+        
+        // Pobierz trasę
+        async function getRoute(start, end, departureTime, useTraffic = true) {
+            let url = `https://api.tomtom.com/routing/1/calculateRoute/${start.lat},${start.lon}:${end.lat},${end.lon}/json?key=${apiKey}&travelMode=car`;
+            
+            if (useTraffic && departureTime) {
+                url += `&traffic=true&routeType=fastest&departAt=${departureTime}`;
+            } else {
+                url += `&traffic=false&routeType=shortest`;
+            }
+            
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.routes && data.routes.length > 0) {
+                return data.routes[0];
+            }
+            throw new Error('Nie znaleziono trasy');
+        }
+        
+        // Rysuj trasy
+        function drawRoute(fastestRoute, shortestRoute) {
+            routeLayer.clearLayers();
+            shortestRouteLayer.clearLayers();
+            
+            // Najkrótsza trasa (fuksjowa, przerywana)
+            const shortestPoints = shortestRoute.legs[0].points.map(p => [p.latitude, p.longitude]);
+            const shortestPolyline = L.polyline(shortestPoints, {
+                color: '#ff00ff',
+                weight: 5,
+                opacity: 0.7,
+                dashArray: '15, 10'
+            }).addTo(shortestRouteLayer);
+            
+            // Najszybsza trasa (fioletowa, ciągła)
+            const fastestPoints = fastestRoute.legs[0].points.map(p => [p.latitude, p.longitude]);
+            const fastestPolyline = L.polyline(fastestPoints, {
+                color: '#667eea',
+                weight: 6,
+                opacity: 0.9
+            }).addTo(routeLayer);
+            
+            // Informacje w popupach
+            const fastestDist = (fastestRoute.summary.lengthInMeters / 1000).toFixed(2);
+            const fastestTime = Math.round(fastestRoute.summary.travelTimeInSeconds / 60);
+            const trafficDelay = Math.round((fastestRoute.summary.trafficDelayInSeconds || 0) / 60);
+            const shortestDist = (shortestRoute.summary.lengthInMeters / 1000).toFixed(2);
+            const shortestTime = Math.round(shortestRoute.summary.travelTimeInSeconds / 60);
+            
+            fastestPolyline.bindPopup(`
+                <div style="font-family: sans-serif;">
+                    <strong style="color: #667eea;">Najszybsza trasa (z ruchem)</strong><br>
+                    Dystans: ${fastestDist} km<br>
+                    Czas: ${fastestTime} min<br>
+                    Opóźnienie: ${trafficDelay} min
+                </div>
+            `);
+            
+            shortestPolyline.bindPopup(`
+                <div style="font-family: sans-serif;">
+                    <strong style="color: #ff00ff;">Najkrótsza trasa (teoretyczna)</strong><br>
+                    Dystans: ${shortestDist} km<br>
+                    Czas: ${shortestTime} min
+                </div>
+            `);
+            
+            map.fitBounds(fastestPolyline.getBounds(), { padding: [50, 50] });
+        }
+        
+        // Wyświetl markery
+        function showMarkers(start, end, startAddr, endAddr) {
+            markersLayer.clearLayers();
+            
+            const startIcon = L.divIcon({
+                html: '<div style="background:#28a745;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;border:3px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3)">A</div>',
+                className: '',
+                iconSize: [30, 30]
+            });
+            
+            const endIcon = L.divIcon({
+                html: '<div style="background:#dc3545;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;border:3px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3)">B</div>',
+                className: '',
+                iconSize: [30, 30]
+            });
+            
+            L.marker([start.lat, start.lon], { icon: startIcon })
+                .bindPopup(`<div style="font-family: sans-serif;"><strong>Start:</strong> ${startAddr}</div>`)
+                .addTo(markersLayer);
+            
+            L.marker([end.lat, end.lon], { icon: endIcon })
+                .bindPopup(`<div style="font-family: sans-serif;"><strong>Cel:</strong> ${endAddr}</div>`)
+                .addTo(markersLayer);
+        }
+        
+        // Pobierz i wyświetl incydenty
+        async function getTrafficIncidents(bounds, routePoints, departureTime) {
+            const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${apiKey}&bbox=${bounds.minLon},${bounds.minLat},${bounds.maxLon},${bounds.maxLat}&fields={incidents{type,geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,events{description,code},startTime,endTime,delay}}}`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                const incidents = data.incidents || [];
+                
+                // Filtruj aktywne incydenty w czasie wyjazdu
+                const departureDate = new Date(departureTime);
+                const activeIncidents = incidents.filter(incident => {
+                    const props = incident.properties;
+                    
+                    if (props.endTime) {
+                        const endTime = new Date(props.endTime);
+                        if (endTime < departureDate) return false;
+                    }
+                    
+                    if (props.startTime) {
+                        const startTime = new Date(props.startTime);
+                        const maxDepartureTime = new Date(departureDate.getTime() + 2 * 60 * 60 * 1000);
+                        if (startTime > maxDepartureTime) return false;
+                    }
+                    
+                    return true;
+                });
+                
+                // Filtruj incydenty w pobliżu trasy
+                const nearbyIncidents = activeIncidents.filter(incident => {
+                    if (!incident.geometry || !incident.geometry.coordinates) return false;
+                    
+                    const coords = incident.geometry.coordinates[0];
+                    const incidentLat = coords[1];
+                    const incidentLon = coords[0];
+                    
+                    for (let point of routePoints) {
+                        const distance = Math.sqrt(
+                            Math.pow(point.latitude - incidentLat, 2) + 
+                            Math.pow(point.longitude - incidentLon, 2)
+                        );
+                        
+                        if (distance < 0.002) return true;
+                    }
+                    
+                    return false;
+                });
+                
+                // Dodaj markery incydentów
+                nearbyIncidents.forEach(incident => {
+                    const coords = incident.geometry.coordinates[0];
+                    const lat = coords[1];
+                    const lon = coords[0];
+                    const delay = incident.properties.magnitudeOfDelay || 0;
+                    const category = incident.properties.iconCategory;
+                    
+                    let color = '#ffc107';
+                    if (category === 8 || category === 10 || category === 7) {
+                        color = '#17a2b8';
+                    } else if (delay >= 3) {
+                        color = '#dc3545';
+                    } else if (delay >= 1) {
+                        color = '#fd7e14';
+                    }
+                    
+                    const icon = L.divIcon({
+                        html: `<div style="background:${color};width:24px;height:24px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4)"></div>`,
+                        className: '',
+                        iconSize: [24, 24]
+                    });
+                    
+                    const desc = incident.properties.events && incident.properties.events[0] 
+                        ? incident.properties.events[0].description 
+                        : 'Incydent drogowy';
+                    
+                    const typeText = getIncidentTypeText(category);
+                    const endTimeStr = incident.properties.endTime 
+                        ? `<br><small>Do: ${new Date(incident.properties.endTime).toLocaleString('pl-PL')}</small>` 
+                        : '';
+                    
+                    L.marker([lat, lon], { icon: icon })
+                        .bindPopup(`<div style="font-family: sans-serif;"><strong>${typeText}</strong><br>${desc}${endTimeStr}</div>`)
+                        .addTo(markersLayer);
+                });
+                
+            } catch (error) {
+                console.error('Błąd pobierania incydentów:', error);
+            }
+        }
+        
+        function getIncidentTypeText(category) {
+            const types = {
+                1: 'Wypadek',
+                2: 'Mgła',
+                3: 'Niebezpieczne warunki',
+                4: 'Deszcz',
+                5: 'Lód',
+                6: 'Zator',
+                7: 'Zamknięta droga',
+                8: 'Roboty drogowe',
+                9: 'Utrudnienia',
+                10: 'Planowane wydarzenie',
+                11: 'Informacje o ruchu',
+                14: 'Poślizg'
+            };
+            return types[category] || 'Incydent';
+        }
+        
+        // Wyświetl legendę tras
+        function displayRouteLegend(fastestRoute, shortestRoute, departureTime) {
+            const fastestSummary = fastestRoute.summary;
+            const shortestSummary = shortestRoute.summary;
+            
+            const fastestDistance = (fastestSummary.lengthInMeters / 1000).toFixed(1);
+            const fastestDuration = Math.round(fastestSummary.travelTimeInSeconds / 60);
+            const trafficDelay = Math.round((fastestSummary.trafficDelayInSeconds || 0) / 60);
+            
+            const shortestDistance = (shortestSummary.lengthInMeters / 1000).toFixed(1);
+            const shortestDuration = Math.round(shortestSummary.travelTimeInSeconds / 60);
+            
+            const departureDate = new Date(departureTime);
+            const arrivalDate = new Date(departureDate.getTime() + fastestDuration * 60000);
+            const arrivalTime = arrivalDate.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+            
+            const legendHTML = `
+                <h3>📊 Podsumowanie tras</h3>
+                
+                <div class="route-content">
+                    <div class="route-section">
+                        <div class="route-title">
+                            <div class="route-line fastest"></div>
+                            <span style="color: #667eea;">Najszybsza (z ruchem)</span>
+                        </div>
+                        <div class="route-stats">
+                            <div class="stat-item">
+                                <span class="stat-label">Dystans</span>
+                                <span class="stat-value">${fastestDistance} km</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Czas</span>
+                                <span class="stat-value">${fastestDuration} min</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Przyjazd</span>
+                                <span class="stat-value">${arrivalTime}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Opóźnienie</span>
+                                <span class="stat-value" style="color: ${trafficDelay > 10 ? '#dc3545' : '#10b981'}">${trafficDelay} min</span>
+                            </div>
+                        </div>
+                        ${trafficDelay > 15 ? `<div class="delay-warning">⚠️ Znaczne opóźnienia z powodu ruchu</div>` : ''}
+                    </div>
+                    
+                    <div class="route-section">
+                        <div class="route-title">
+                            <div class="route-line shortest"></div>
+                            <span style="color: #ff00ff;">Najkrótsza (teoretyczna)</span>
+                        </div>
+                        <div class="route-stats">
+                            <div class="stat-item">
+                                <span class="stat-label">Dystans</span>
+                                <span class="stat-value">${shortestDistance} km</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Czas</span>
+                                <span class="stat-value">${shortestDuration} min</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Różnica km</span>
+                                <span class="stat-value">${(shortestDistance - fastestDistance).toFixed(1)} km</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Różnica czasu</span>
+                                <span class="stat-value">${shortestDuration - fastestDuration} min</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            const legendElement = document.getElementById('routeLegend');
+            if (legendElement) {
+                legendElement.innerHTML = legendHTML;
+                legendElement.style.display = 'block';
+                console.log('Legend displayed successfully');
+            } else {
+                console.error('Legend element not found!');
+            }
+        }
+        
+        function hideLoading() {
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.style.display = 'none';
+            }
+        }
+        
+        function showError(message) {
+            hideLoading();
+            alert('Błąd: ' + message);
+        }
+        
+        // Główna funkcja
+        async function planRoute() {
+            const params = getUrlParams();
+            
+            if (!params.from || !params.to || !params.date || !params.time) {
+                showError('Brak wymaganych parametrów w URL');
+                return;
+            }
+            
+            const loaded = await loadApiKey();
+            if (!loaded) return;
+            
+            try {
+                // Geokodowanie
+                const start = await geocodeAddress(params.from);
+                const end = await geocodeAddress(params.to);
+                
+                // Przygotuj departAt
+                const departureTime = `${params.date}T${params.time}:00`;
+                
+                // Pobierz obie trasy
+                const fastestRoute = await getRoute(start, end, departureTime, true);
+                const shortestRoute = await getRoute(start, end, null, false);
+                
+                console.log('Routes calculated:', {
+                    fastest: fastestRoute.summary,
+                    shortest: shortestRoute.summary
+                });
+                
+                // Wyświetl
+                drawRoute(fastestRoute, shortestRoute);
+                showMarkers(start, end, params.from, params.to);
+                displayRouteLegend(fastestRoute, shortestRoute, departureTime);
+                
+                // Pobierz incydenty
+                const bounds = {
+                    minLat: Math.min(start.lat, end.lat) - 0.5,
+                    maxLat: Math.max(start.lat, end.lat) + 0.5,
+                    minLon: Math.min(start.lon, end.lon) - 0.5,
+                    maxLon: Math.max(start.lon, end.lon) + 0.5
+                };
+                
+                const routePoints = fastestRoute.legs[0].points;
+                await getTrafficIncidents(bounds, routePoints, departureTime);
+                
+                hideLoading();
+                
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+        
+        // Start
+        window.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            planRoute();
+        });
+    </script>
+</body>
+</html>

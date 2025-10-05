@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa Ruchu Drogowego</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            z-index: 9999;
+            text-align: center;
+        }
+        #loading h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #error {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #fee;
+            color: #c00;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 9999;
+            max-width: 90%;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <h3>Pobieranie lokalizacji...</h3>
+        <div class="spinner"></div>
+    </div>
+    <div id="error"></div>
+    <div id="map"></div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script>
+        let map;
+        let trafficLayer;
+        let circleMarker;
+        let apiKey = null;
+        
+        // Funkcja do parsowania parametrów URL
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                lat: params.get('lat') ? parseFloat(params.get('lat')) : null,
+                lon: params.get('lon') ? parseFloat(params.get('lon')) : null,
+                radius: params.get('radius') ? parseFloat(params.get('radius')) : 5.0
+            };
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        // Pobierz lokalizację użytkownika
+        async function getUserLocation() {
+            return new Promise((resolve, reject) => {
+                if (!navigator.geolocation) {
+                    reject(new Error('Geolokalizacja nie jest wspierana'));
+                    return;
+                }
+                
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        resolve({
+                            lat: position.coords.latitude,
+                            lon: position.coords.longitude
+                        });
+                    },
+                    (error) => {
+                        let message = 'Nie można pobrać lokalizacji. ';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                message += 'Brak uprawnień.';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                message += 'Lokalizacja niedostępna.';
+                                break;
+                            case error.TIMEOUT:
+                                message += 'Przekroczono limit czasu.';
+                                break;
+                        }
+                        reject(new Error(message));
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            });
+        }
+        
+        // Wczytaj klucz API z pliku key.txt
+        async function loadApiKey() {
+            if (apiKey && apiKey !== null) {
+                console.log('Używam klucza API z kodu');
+                return true;
+            }
+            
+            try {
+                const response = await fetch('key.txt');
+                if (!response.ok) {
+                    throw new Error('Nie można wczytać pliku key.txt');
+                }
+                const key = await response.text();
+                apiKey = key.trim();
+                console.log('Klucz API wczytany pomyślnie');
+                return true;
+            } catch (error) {
+                console.error('Błąd wczytywania klucza API:', error.message);
+                showError('Błąd: Brak klucza API. Ustaw apiKey w kodzie lub dodaj key.txt');
+                return false;
+            }
+        }
+        
+        // Inicjalizacja mapy
+        function initMap(lat, lon, radius) {
+            map = L.map('map').setView([lat, lon], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            // Okrąg obszaru
+            circleMarker = L.circle([lat, lon], {
+                color: '#667eea',
+                fillColor: '#667eea',
+                fillOpacity: 0.1,
+                radius: radius * 1000
+            }).addTo(map);
+            
+            // Marker centrum (Twoja lokalizacja)
+            L.marker([lat, lon], {
+                icon: L.divIcon({
+                    className: 'user-location-marker',
+                    html: `<div style="
+                        width: 20px;
+                        height: 20px;
+                        background: #3b82f6;
+                        border: 3px solid white;
+                        border-radius: 50%;
+                        box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+                    "></div>`,
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10]
+                })
+            }).addTo(map)
+                .bindPopup(`<b>📍 Twoja lokalizacja</b><br>Lat: ${lat.toFixed(4)}<br>Lon: ${lon.toFixed(4)}<br>Promień: ${radius} km`);
+            
+            map.fitBounds(circleMarker.getBounds(), { padding: [50, 50] });
+        }
+        
+        async function loadTraffic(centerLat, centerLon, radius) {
+            const loaded = await loadApiKey();
+            if (!loaded) {
+                console.error('Nie można załadować klucza API');
+                hideLoading();
+                return;
+            }
+            
+            const bounds = calculateBounds(centerLat, centerLon, radius);
+            const bbox = `${bounds.minLon},${bounds.minLat},${bounds.maxLon},${bounds.maxLat}`;
+            
+            try {
+                // Test klucza API
+                console.log('Testowanie klucza API...');
+                const testUrl = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?key=${apiKey}&point=${centerLat},${centerLon}`;
+                const testResponse = await fetch(testUrl);
+                
+                if (!testResponse.ok) {
+                    throw new Error(`API Error (${testResponse.status})`);
+                }
+                
+                console.log('Klucz API poprawny!');
+                
+                // Warstwa ruchu
+                trafficLayer = L.tileLayer(
+                    `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${apiKey}`,
+                    {
+                        attribution: '© TomTom Traffic',
+                        opacity: 0.8,
+                        maxZoom: 18
+                    }
+                ).addTo(map);
+                
+                console.log('Warstwa ruchu dodana');
+                
+                // Pobierz dane o przepływie
+                await fetchTrafficFlowData(centerLat, centerLon, bounds, radius);
+                
+                // Pobierz incydenty
+                const incidentsUrl = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${apiKey}&bbox=${bbox}&fields={incidents{type,geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,events{description,code},delay}}}`;
+                
+                console.log('Pobieranie incydentów...');
+                const response = await fetch(incidentsUrl);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    displayIncidents(data);
+                }
+                
+                hideLoading();
+                
+            } catch (error) {
+                console.error('Błąd:', error);
+                showError('Błąd pobierania danych ruchu: ' + error.message);
+                hideLoading();
+            }
+        }
+        
+        async function fetchTrafficFlowData(centerLat, centerLon, bounds, radius) {
+            const numPoints = Math.max(7, Math.min(15, Math.round(radius * 2)));
+            const points = [[centerLat, centerLon]];
+            
+            const latDelta = (radius / 111) * 0.4;
+            const lonDelta = (radius / (111 * Math.cos(centerLat * Math.PI / 180))) * 0.4;
+            
+            for (let i = 0; i < numPoints - 1; i++) {
+                const angle = (2 * Math.PI * i) / (numPoints - 1);
+                const lat = centerLat + latDelta * Math.sin(angle);
+                const lon = centerLon + lonDelta * Math.cos(angle);
+                points.push([lat, lon]);
+            }
+            
+            console.log(`Pobieranie danych dla ${points.length} punktów...`);
+            
+            for (const [lat, lon] of points) {
+                try {
+                    const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?key=${apiKey}&point=${lat},${lon}`;
+                    const response = await fetch(url);
+                    
+                    if (!response.ok) continue;
+                    
+                    const data = await response.json();
+                    
+                    if (data.flowSegmentData) {
+                        const speed = data.flowSegmentData.currentSpeed;
+                        const freeFlow = data.flowSegmentData.freeFlowSpeed;
+                        const confidence = data.flowSegmentData.confidence || 0;
+                        
+                        let color = '#00ff00';
+                        if (speed < freeFlow * 0.5) color = '#8b0000';
+                        else if (speed < freeFlow * 0.75) color = '#ff0000';
+                        else if (speed < freeFlow * 0.9) color = '#ffa500';
+                        else if (speed < freeFlow * 0.95) color = '#ffff00';
+                        
+                        L.circleMarker([lat, lon], {
+                            radius: 8,
+                            fillColor: color,
+                            color: '#fff',
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.8
+                        }).addTo(map)
+                            .bindPopup(`
+                                <b>📊 Pomiar prędkości</b><br>
+                                Aktualna: <b>${speed} km/h</b><br>
+                                Normalna: ${freeFlow} km/h<br>
+                                Spowolnienie: ${Math.round((1 - speed/freeFlow) * 100)}%<br>
+                                Pewność: ${(confidence * 100).toFixed(0)}%
+                            `);
+                    }
+                } catch (e) {
+                    console.warn('Błąd dla punktu', lat, lon);
+                }
+            }
+        }
+        
+        function calculateBounds(lat, lon, radiusKm) {
+            const latDelta = radiusKm / 111;
+            const lonDelta = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
+            return {
+                minLat: lat - latDelta,
+                maxLat: lat + latDelta,
+                minLon: lon - lonDelta,
+                maxLon: lon + lonDelta
+            };
+        }
+        
+        function displayIncidents(data) {
+            if (!data.incidents || data.incidents.length === 0) {
+                console.log('Brak incydentów');
+                return;
+            }
+            
+            console.log(`Znaleziono ${data.incidents.length} incydentów`);
+            
+            data.incidents.forEach(incident => {
+                if (incident.geometry && incident.geometry.coordinates) {
+                    const coords = incident.geometry.coordinates[0];
+                    const description = incident.properties?.events?.[0]?.description || 'Incydent';
+                    const delay = incident.properties?.magnitudeOfDelay || 'nieznane';
+                    
+                    L.marker([coords[1], coords[0]], {
+                        icon: L.icon({
+                            iconUrl: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-icon.png',
+                            iconSize: [25, 41],
+                            iconAnchor: [12, 41]
+                        })
+                    }).addTo(map)
+                        .bindPopup(`<b>${description}</b><br>Opóźnienie: ${delay}`);
+                }
+            });
+        }
+        
+        // Start - priorytet: URL params -> geolokalizacja -> fallback Warszawa
+        window.addEventListener('DOMContentLoaded', async () => {
+            const urlParams = getUrlParams();
+            let centerLat, centerLon, radius;
+            
+            // Jeśli są parametry w URL, użyj ich
+            if (urlParams.lat && urlParams.lon) {
+                console.log('Używam lokalizacji z URL');
+                centerLat = urlParams.lat;
+                centerLon = urlParams.lon;
+                radius = urlParams.radius;
+            } else {
+                // Pobierz lokalizację z urządzenia
+                try {
+                    console.log('Pobieranie lokalizacji z urządzenia...');
+                    const location = await getUserLocation();
+                    centerLat = location.lat;
+                    centerLon = location.lon;
+                    radius = 5.0;
+                    console.log(`Lokalizacja pobrana: ${centerLat}, ${centerLon}`);
+                } catch (error) {
+                    console.error('Błąd geolokalizacji:', error);
+                    showError(error.message + ' Używam domyślnej lokalizacji (Warszawa)');
+                    // Fallback do Warszawy
+                    centerLat = 52.2297;
+                    centerLon = 21.0122;
+                    radius = 5.0;
+                }
+            }
+            
+            initMap(centerLat, centerLon, radius);
+            await loadTraffic(centerLat, centerLon, radius);
+        });
+    </script>
+</body>
+</html>

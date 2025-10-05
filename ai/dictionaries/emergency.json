@@ -1,0 +1,44 @@
+{
+  "category": "emergency",
+  "triggers": [
+    "pomocy",
+    "nagły",
+    "ratunku",
+    "niebezpieczeństwo",
+    "zagrożenie"
+  ],
+  "subcategories": {
+    "accident_with_injuries": {
+      "keywords": [
+        "ranni",
+        "poszkodowani",
+        "krew",
+        "nieprzytomny"
+      ],
+      "systemPrompt": "TRYB AWARYJNY: Priorytet to bezpieczeństwo. Informuj o konieczności wezwania służb ratunkowych (112). Zbieraj kluczowe informacje.",
+      "questions": [
+        "⚠️ Czy służby ratunkowe już jadą?",
+        "Ile osób jest rannych?",
+        "Czy ktoś jest nieprzytomny?",
+        "Dokładna lokalizacja zdarzenia?"
+      ],
+      "priority": 10
+    },
+    "fire": {
+      "keywords": [
+        "pożar",
+        "ogień",
+        "dym",
+        "pali się"
+      ],
+      "systemPrompt": "TRYB AWARYJNY - POŻAR: Natychmiast informuj o numerze 998/112. Bezpieczeństwo użytkownika to priorytet.",
+      "questions": [
+        "🔥 Czy straż pożarna została wezwana?",
+        "Co się pali?",
+        "Czy są zagrożone osoby?",
+        "Czy jesteś w bezpiecznej odległości?"
+      ],
+      "priority": 10
+    }
+  }
+}

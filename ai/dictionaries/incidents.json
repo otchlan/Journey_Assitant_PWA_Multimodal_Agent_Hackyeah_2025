@@ -1,0 +1,80 @@
+{
+  "category": "incidents",
+  "triggers": [
+    "wypadek",
+    "kolizja",
+    "stłuczka",
+    "korek",
+    "zablokowana",
+    "utrudnienia",
+    "awaria"
+  ],
+  "subcategories": {
+    "accident": {
+      "keywords": [
+        "wypadek",
+        "zderzenie",
+        "kolizja",
+        "stłuczka",
+        "potrącenie"
+      ],
+      "systemPrompt": "Jesteś pomocnym asystentem ds. zgłaszania wypadków drogowych. Zadawaj konkretne pytania, aby zebrać kluczowe informacje: czy są ranni, ile pojazdów, czy droga jest zablokowana. Bądź empatyczny i profesjonalny.",
+      "questions": [
+        "Czy ktoś jest ranny?",
+        "Ile pojazdów bierze udział w zdarzeniu?",
+        "Czy droga jest całkowicie zablokowana?",
+        "Czy wzywano służby ratunkowe?"
+      ],
+      "priority": 1
+    },
+    "traffic": {
+      "keywords": [
+        "korek",
+        "zatłoczenie",
+        "wolno",
+        "utrudnienia",
+        "zator"
+      ],
+      "systemPrompt": "Jesteś asystentem pomagającym w zgłaszaniu utrudnień w ruchu. Zbieraj informacje o lokalizacji, skali i przyczynie utrudnień.",
+      "questions": [
+        "Jak duży jest korek (w km lub czasie oczekiwania)?",
+        "W którym kierunku występuje utrudnienie?",
+        "Czy znasz przyczynę korka?",
+        "Czy są alternatywne trasy?"
+      ],
+      "priority": 2
+    },
+    "roadblock": {
+      "keywords": [
+        "zablokowana",
+        "zamknięta",
+        "nie przejedziesz",
+        "roboty"
+      ],
+      "systemPrompt": "Asystent ds. zgłaszania zablokowanych dróg. Zbieraj informacje o przyczynie, czasie trwania i objazach.",
+      "questions": [
+        "Jaka jest przyczyna zablokowania drogi?",
+        "Czy są oznakowania lub objazdy?",
+        "Jak długo droga będzie zamknięta?",
+        "Czy dotyka obu kierunków ruchu?"
+      ],
+      "priority": 1
+    },
+    "vehicle_breakdown": {
+      "keywords": [
+        "awaria",
+        "zepsuty",
+        "stoi",
+        "nie jedzie"
+      ],
+      "systemPrompt": "Asystent ds. zgłaszania awarii pojazdów. Pomagaj w opisie sytuacji i zagrożenia dla ruchu.",
+      "questions": [
+        "Gdzie stoi zepsuty pojazd?",
+        "Czy pojazd blokuje pas ruchu?",
+        "Czy są włączone światła awaryjne?",
+        "Czy kierowca potrzebuje pomocy?"
+      ],
+      "priority": 2
+    }
+  }
+}
