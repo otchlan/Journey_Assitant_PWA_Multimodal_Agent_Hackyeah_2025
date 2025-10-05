@@ -37,3 +37,8 @@ See the complete project pitch:
 ```bash
    git clone <repository-url>
    cd Journey_Assitant_PWA_Multimodal_Agent_Hackyeah_2025
+```
+2. **Install dependencies**
+```bun install```
+3.**Start development server**
+```bun run dev```
